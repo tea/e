@@ -2,17 +2,21 @@
 REM If we're not running under a VS prompt, try to get one.
 if "%VCInstallDir%"=="" call "%VS90COMNTOOLS%\vsvars32.bat"
 
+set VARIANT=%1
+if "%VARIANT%"=="" set VARIANT=Debug
+set CONFIG="%VARIANT%|Win32"
+
 if not EXIST build_logs mkdir build_logs
 
-call :BUILD libtommath\libtommath.sln
-call :BUILD libtomcrypt\libtomcrypt.sln
-call :BUILD curl\lib\curllib.sln
-call :BUILD metakit\win\msvc90\mksrc.sln
-call :BUILD pcre\pcre.sln
-call :BUILD tinyxml\tinyxml.sln
+call :BUILD libtommath\libtommath.sln %CONFIG%
+call :BUILD libtomcrypt\libtomcrypt.sln %CONFIG%
+call :BUILD curl\lib\curllib.sln %CONFIG%
+call :BUILD metakit\win\msvc90\mksrc.sln %CONFIG%
+call :BUILD pcre\pcre.sln %CONFIG%
+call :BUILD tinyxml\tinyxml.sln %CONFIG%
 
-call build_wxwidgets_win.cmd
-call build_boost_win.cmd
+call build_wxwidgets_win.cmd %VARIANT%
+call build_boost_win.cmd %VARIANT%
 
 echo Builds complete, check build_logs for possible issues.
 
