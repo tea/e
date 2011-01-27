@@ -27,7 +27,7 @@ class dc;
 
 class GutterCtrl : public wxControl {
 public:
-	GutterCtrl(EditorCtrl& parent, wxWindowID id);
+	GutterCtrl(wxControl* parent, EditorCtrl& editor, wxWindowID id);
 	void UpdateTheme(bool forceRecalculateDigitWidth=false);
 
 	void SetGutterRight(bool doMove=true);

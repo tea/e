@@ -1022,6 +1022,14 @@
 				>
 			</File>
 			<File
+				RelativePath=".\EditorArea.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\EditorArea.h"
+				>
+			</File>
+			<File
 				RelativePath="EditorChangeState.h"
 				>
 			</File>

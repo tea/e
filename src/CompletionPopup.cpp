@@ -168,10 +168,10 @@ void CompletionList::SetCompletions(const wxArrayString& completions) {
 }
 
 
-CompletionPopup::CompletionPopup(EditorCtrl& parent, const wxPoint& pos, const wxPoint& topPos, const wxString& target, const wxArrayString& completions):
-	wxDialog(&parent, wxID_ANY, wxEmptyString, pos, wxDefaultSize, wxNO_BORDER)
+CompletionPopup::CompletionPopup(wxControl* parent, EditorCtrl& editor, const wxPoint& pos, const wxPoint& topPos, const wxString& target, const wxArrayString& completions):
+	wxDialog(parent, wxID_ANY, wxEmptyString, pos, wxDefaultSize, wxNO_BORDER)
 {
-	CompletionList* clist = new CompletionList(*this, parent, target, completions);
+	CompletionList* clist = new CompletionList(*this, editor, target, completions);
 
 	// Create Layout
 	wxBoxSizer *mainSizer = new wxBoxSizer(wxVERTICAL);

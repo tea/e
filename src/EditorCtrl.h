@@ -28,7 +28,6 @@
 #include "styler_htmlhl.h"
 #include "styler_syntax.h"
 #include "SnippetHandler.h"
-#include "key_hook.h"
 #include "FindFlags.h"
 #include "BundleItemType.h"
 #include "BracketHighlight.h"
@@ -63,8 +62,9 @@ class tmAction;
 class tmDragCommand;
 class TmSyntaxHandler;
 
+class EditorArea;
 
-class EditorCtrl : public KeyHookable<wxControl>, 
+class EditorCtrl : public wxControl,
 	public IFoldingEditor,
 	public IEditorDoAction,
 	public IPrintableDocument,
@@ -72,6 +72,7 @@ class EditorCtrl : public KeyHookable<wxControl>,
 	public IEditorSearch,
 	public ITabPage
 {
+friend class EditorArea;
 public:
 	class ModSkipState {
 		public:
@@ -163,6 +164,7 @@ public:
 	void EnableRedraw(bool enable) {m_enableDrawing = enable;};
 	virtual void ReDraw(){DrawLayout();}
 	bool Show(bool show);
+	void SetFocus();
 	void SetWordWrap(cxWrapMode wrapMode);
 	void SetShowGutter(bool showGutter);
 	void SetShowIndent(bool showIndent);
@@ -493,7 +495,6 @@ protected:
 
 private:
 	// Event handlers
-	void OnPaint(wxPaintEvent& event);
 	void OnChar(wxKeyEvent& event);
 	void OnKeyDown(wxKeyEvent& event);
 	void OnKeyUp(wxKeyEvent& event);
@@ -695,6 +696,7 @@ protected:
 
 	int lastxpos; // Used to keep Up/Down in line
 
+	EditorArea* m_area;
 	GutterCtrl* m_gutterCtrl;
 	bool m_showGutter;
 	bool m_gutterLeft;

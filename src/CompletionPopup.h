@@ -23,7 +23,7 @@ class EditorCtrl;
 
 class CompletionPopup: public wxDialog {
 public:
-	CompletionPopup(EditorCtrl& parent, const wxPoint& pos, const wxPoint& topPos, const wxString& target, const wxArrayString& completions);
+	CompletionPopup(wxControl* parent, EditorCtrl& editor, const wxPoint& pos, const wxPoint& topPos, const wxString& target, const wxArrayString& completions);
 };
 
 #endif // __COMPLETIONPOPUP_H__

@@ -39,9 +39,9 @@ BEGIN_EVENT_TABLE(GutterCtrl, wxControl)
 	EVT_MOUSE_CAPTURE_LOST(GutterCtrl::OnCaptureLost)
 END_EVENT_TABLE()
 
-GutterCtrl::GutterCtrl(EditorCtrl& parent, wxWindowID id): 
-	wxControl(&parent, id, wxDefaultPosition, wxDefaultSize, wxNO_BORDER|wxCLIP_CHILDREN|wxNO_FULL_REPAINT_ON_RESIZE),
-	m_editorCtrl(parent), 
+GutterCtrl::GutterCtrl(wxControl* parent, EditorCtrl& editor, wxWindowID id): 
+	wxControl(parent, id, wxDefaultPosition, wxDefaultSize, wxNO_BORDER|wxCLIP_CHILDREN|wxNO_FULL_REPAINT_ON_RESIZE),
+	m_editorCtrl(editor), 
 	m_mdc(), m_bitmap(1,1), m_width(0), m_gutterLeft(true), 
 	m_showBookmarks(true), 
 	m_showFolds(true), m_currentFold(NULL), m_posBeforeFoldClick(-1),
@@ -134,19 +134,21 @@ unsigned GutterCtrl::CalcLayout(unsigned int height) {
 
 	// Resize control
 	m_max_digits = digits;
-	m_width = m_digit_width*m_max_digits + 7;
+	unsigned int new_width = m_digit_width*m_max_digits + 7;
 	m_numberX = 3;
 	if (m_showBookmarks) {
-		m_width += 10;
+		new_width += 10;
 		m_numberX += 10;
 	}
-	m_foldStartX = m_width;
+	m_foldStartX = new_width;
 	if (m_showFolds) {
-		m_width += 10;
+		new_width += 10;
 		m_foldStartX -= 2; // compensate for border
 	}
 
-	SetSize(m_width, height);
+	if (m_width != new_width)
+		SetSize(new_width, height);
+	m_width = new_width;
 	return m_width;
 }
 
