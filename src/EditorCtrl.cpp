@@ -87,23 +87,6 @@ private:
 	 const vector<const tmAction*>& m_list;
 };
 
-class DragDropTarget : public wxDropTarget {
-public:
-	DragDropTarget(EditorCtrl& editor);
-	wxDragResult OnData(wxCoord x, wxCoord y, wxDragResult def);
-	wxDragResult OnDragOver(wxCoord x, wxCoord y, wxDragResult def) {
-		m_editor.OnDragOver(x, y);
-		return def;
-	}
-
-private:
-	EditorCtrl& m_editor;
-	wxFileDataObject* m_fileObject;
-	wxTextDataObject* m_textObject;
-	MultilineDataObject* m_columnObject;
-	wxDataObjectComposite* m_dataObject;
-};
-
 
 enum ShellOutput {soDISCARD, soREPLACESEL, soREPLACEDOC, soINSERT, soSNIPPET, soHTML, soTOOLTIP, soNEWDOC};
 
@@ -156,7 +139,6 @@ EditorCtrl::EditorCtrl(const int page_id, CatalystWrapper& cw, wxBitmap& bitmap,
 	m_enableDrawing(false), 
 	m_isResizing(true),
 	scrollPos(0), 
-	m_scrollPosX(0), 
 	topline(-1), 
 	commandMode(false),
 	m_changeToken(0), 
@@ -216,7 +198,6 @@ EditorCtrl::EditorCtrl(const doc_id di, const wxString& mirrorPath, CatalystWrap
 	m_enableDrawing(false), 
 	m_isResizing(true),
 	scrollPos(0),
-	m_scrollPosX(0),
 	topline(-1),
 	commandMode(false), 
 	m_changeToken(0),
@@ -291,7 +272,6 @@ EditorCtrl::EditorCtrl(CatalystWrapper& cw, wxBitmap& bitmap, wxWindow* parent, 
 	m_enableDrawing(false), 
 	m_isResizing(true),
 	scrollPos(0), 
-	m_scrollPosX(0), 
 	topline(-1), 
 	commandMode(false), 
 	m_changeToken(0), 
@@ -462,10 +442,6 @@ void EditorCtrl::Init() {
 	wxSize size = m_area->GetClientSize();
 	if (bitmap.GetWidth() < size.x || bitmap.GetHeight() < size.y)
 		bitmap = wxBitmap(size.x, size.y);
-
-	// Set drop target so files and text can be dragged from explorer to trigger drag commands
-	DragDropTarget* dropTarget = new DragDropTarget(*this);
-	m_area->SetDropTarget(dropTarget);
 
 	// Make sure we get notified if we should display another document
 	dispatcher.SubscribeC(wxT("WIN_SETDOCUMENT"), (CALL_BACK)OnSetDocument, this);
@@ -915,22 +891,7 @@ bool EditorCtrl::UpdateScrollbars(unsigned int x, unsigned int y) {
 		}
 	}
 
-	// Check if we need a horizontal scrollbar
-	const int scrollThumbX = m_area->GetScrollThumb(wxHORIZONTAL);
-	const unsigned int width = m_lines.GetWidth() + m_area->GetCaretWidth();
-	if ((m_lines.GetWrapMode() == cxWRAP_NONE || m_wrapAtMargin) && width > x) {
-		m_scrollPosX = wxMin(m_scrollPosX, (int)(width-x));
-		m_scrollPosX = wxMax(0, m_scrollPosX);
-
-		m_area->SetScrollbar(wxHORIZONTAL, m_scrollPosX, x, width);
-	}
-	else if (scrollThumbX > 0) {
-		m_scrollPosX = 0;
-		m_area->SetScrollbar(wxHORIZONTAL, 0, 0, 0);
-		return true; // Removal of scrollbar have sent a size event
-	}
-
-	return false; // no scrollbar was added or removed
+	return m_area->UpdateScrollbar(x);
 }
 
 void EditorCtrl::DrawLayout(bool isScrolling) {
@@ -946,7 +907,7 @@ void EditorCtrl::DrawLayout(wxDC& dc, bool WXUNUSED(isScrolling)) {
 
 	if (m_beforeRedrawCallback) m_beforeRedrawCallback(m_callbackData);
 
-	wxASSERT(m_scrollPosX >= 0);
+	wxASSERT(m_area->GetScrollPosX() >= 0);
 
 	// Check if we should cancel a snippet
 	if (m_snippetHandler.IsActive()) m_snippetHandler.Validate();
@@ -1064,7 +1025,7 @@ void EditorCtrl::DrawLayout(wxDC& dc, bool WXUNUSED(isScrolling)) {
 	mdc.DrawRectangle(rect.x, rect.y - scrollPos, rect.width, rect.height);
 
 	// Draw the layout to MemoryDC
-	m_lines.Draw(-m_scrollPosX, -scrollPos, rect);
+	m_lines.Draw(-m_area->GetScrollPosX(), -scrollPos, rect);
 	
 	// During the draw we may have corrected some approximated
 	// line dimensions causing the dimesions of the entire document
@@ -1110,14 +1071,14 @@ unsigned int EditorCtrl::ClientWidthToEditor(unsigned int width) const {
 }
 
 wxPoint EditorCtrl::ClientPosToEditor(unsigned int xpos, unsigned int ypos) const {
-	unsigned int adjXpos = (xpos - m_leftScrollWidth) + m_scrollPosX;
+	unsigned int adjXpos = (xpos - m_leftScrollWidth) + m_area->GetScrollPosX();
 	if (m_gutterLeft) adjXpos -= m_gutterWidth;
 
 	return wxPoint(adjXpos, ypos + scrollPos);
 }
 
 wxPoint EditorCtrl::EditorPosToClient(unsigned int xpos, unsigned int ypos) const {
-	unsigned int adjXpos = (xpos - m_scrollPosX) + m_leftScrollWidth;
+	unsigned int adjXpos = (xpos - m_area->GetScrollPosX()) + m_leftScrollWidth;
 	if (m_gutterLeft) adjXpos += m_gutterWidth;
 
 	return wxPoint(adjXpos, ypos - scrollPos);
@@ -7833,33 +7794,7 @@ void EditorCtrl::MakeSelectionVisible(unsigned int sel_id) {
 
 	const wxPoint sel_start = m_lines.GetCharPos(iv.start);
 	const wxPoint sel_end = m_lines.GetCharPos(iv.end);
-	const wxSize clientsize = m_area->GetClientSize();
-
-	// Vertically
-	if (sel_start.y < scrollPos) scrollPos = sel_start.y;
-	else {
-		const int lineheight = m_lines.GetLineHeight();
-		if (sel_end.y + lineheight >= scrollPos + clientsize.y) {
-			// Make sure that we can see as much of the selection as possible
-			scrollPos = wxMin(sel_start.y, (sel_end.y + lineheight) - clientsize.y);
-		}
-	}
-
-	const int sizeX = ClientWidthToEditor(clientsize.x);
-
-	// Horizontally for End
-	if (sel_end.x < m_scrollPosX)
-		m_scrollPosX = wxMax(sel_end.x - 50, 0);
-	else if (sel_end.x >= m_scrollPosX + sizeX)
-		m_scrollPosX = (sel_end.x + 50) - sizeX;
-
-	// Horizontally for Start
-	if (sel_start.x < m_scrollPosX)
-		m_scrollPosX = wxMax(sel_start.x - 50, 0);
-	else if (sel_start.x >= m_scrollPosX + sizeX)
-		m_scrollPosX = (sel_start.x + 50) - sizeX;
-
-	// NOTE: Will first be visible on next redraw
+	m_area->MakeSelectionVisible(sel_start, sel_end);
 }
 
 void EditorCtrl::KeepCaretAlive(bool keepAlive) {
@@ -8712,65 +8647,14 @@ void EditorCtrl::DoVerticalWheelScroll(wxMouseEvent& event) {
 	}
 }
 
-void EditorCtrl::DoHorizontalWheelScroll(wxMouseEvent& event) {
-	const wxSize size = m_area->GetClientSize();
-	int pos = m_scrollPosX;
-	const int rotation = event.GetWheelRotation();
-
-	if (event.GetLinesPerAction() == (int)UINT_MAX) { // signifies to scroll a page
-		wxScrollWinEvent newEvent;
-		newEvent.SetOrientation(wxHORIZONTAL);
-		newEvent.SetEventObject(m_area);
-		newEvent.SetEventType(rotation>0 ? wxEVT_SCROLLWIN_PAGEUP : wxEVT_SCROLLWIN_PAGEDOWN);
-        ProcessEvent(newEvent);
-		return;
-	}
-
-	if (rotation == 0) return;
-
-	const int scroll_amount= (rotation / event.GetWheelDelta()) * event.GetLinesPerAction();
-	pos -= 10 * scroll_amount;
-
-	if (rotation > 0) pos = max(pos, 0); // left
-	else if (rotation < 0) pos = min(pos, m_lines.GetWidth() - (int)m_lines.GetDisplayWidth()); // right
-
-	if (pos != m_scrollPosX) {
-		m_scrollPosX = pos;
-		DrawLayout();
-	}
-}
-
 void EditorCtrl::ProcessMouseWheel(wxMouseEvent& event) {
-	if (event.ShiftDown()) {
-		// Only handle scrollwheel if we have a scrollbar
-		if (m_area->GetScrollThumb(wxHORIZONTAL))
-			DoHorizontalWheelScroll(event);
-	}
-	else {
-		// Only handle scrollwheel if we have a scrollbar
-		if (HasScrollbar())
-			DoVerticalWheelScroll(event);
-	}
+	m_area->ProcessMouseWheel(event);
 }
 
-void EditorCtrl::OnMouseWheel(wxMouseEvent& event) {
-	// If the EditorCtrl is focused, only handle the event directly if happens within the bounds
-	// of the editor control. Otherwise, let if float up to the EditorFrame.
-
-	// The EditorFrame may float the event back down, but it will do so by
-	// calling EditorCtrl::ProcessMouseWheel directly.
-
-	const wxSize& my_size = m_area->GetSize();
-	const wxPoint& where = event.GetPosition();
-
-	if ((where.x < 0) && (where.y < 0) && 
-		(where.x > my_size.GetWidth()) && (where.y > my_size.GetHeight()))
-	{
-		ProcessMouseWheel(event);
-		return;
-	}
-
-	event.Skip(true);
+void EditorCtrl::ProcessVerticalMouseWheel(wxMouseEvent& event) {
+	// Only handle scrollwheel if we have a scrollbar
+	if (HasScrollbar())
+		DoVerticalWheelScroll(event);
 }
 
 void EditorCtrl::SetScroll(unsigned int ypos) {
@@ -8791,7 +8675,7 @@ void EditorCtrl::OnScrollBar(wxScrollEvent& event) {
 
 void EditorCtrl::HandleScroll(int orientation, int position, wxEventType eventType) {
 	const wxSize size = m_area->GetClientSize();
-	int pos = (orientation == wxVERTICAL) ? scrollPos : m_scrollPosX;
+	int pos = (orientation == wxVERTICAL) ? scrollPos : m_area->GetScrollPosX();
 	const int page_size = (orientation == wxVERTICAL) ? size.y : m_lines.GetDisplayWidth();
 	const int doc_size = (orientation == wxVERTICAL) ? m_lines.GetHeight() : m_lines.GetWidth();
 	const int line_size = (orientation == wxVERTICAL) ? m_lines.GetLineHeight() : 10;
@@ -8842,10 +8726,7 @@ void EditorCtrl::HandleScroll(int orientation, int position, wxEventType eventTy
 		}
 	}
 	else { // Horizontal scroll
-		if (pos != m_scrollPosX) {
-			m_scrollPosX = pos;
-			DrawLayout(false);
-		}
+		m_area->SetScrollPosX(pos);
 	}
 }
 
@@ -9059,44 +8940,6 @@ void EditorCtrl::DoDragCommand(const tmDragCommand &cmd, const wxString& path) {
 	DoAction(cmd, &env, false);
 
 	wxLogDebug(wxT("After DoDragCommand pos:%d len:%d"), GetPos(), GetLength());
-}
-
-void EditorCtrl::OnDragOver(wxCoord x, wxCoord y) {
-	const unsigned int lineHeight = m_lines.GetLineHeight();
-	const int scrollBorder = lineHeight / 2;
-	const wxSize size = m_area->GetClientSize();
-
-	// Check if we should scroll vertical
-	if (y < scrollBorder) {
-		scrollPos = scrollPos - (scrollPos % lineHeight) - lineHeight;
-		if (scrollPos < 0) scrollPos = 0;
-	}
-	else if (y > size.y - scrollBorder) {
-		scrollPos = scrollPos - (scrollPos % lineHeight) + lineHeight;
-		if (scrollPos > m_lines.GetHeight() - size.y) scrollPos = m_lines.GetHeight() - size.y;
-	}
-
-	// Check if we should scroll horizontal
-	const int editorX = ClientWidthToEditor(x);
-	const int editorWidth = ClientWidthToEditor(size.x);
-	if (editorX < scrollBorder) {
-		m_scrollPosX -= 50;
-		if (m_scrollPosX < 0) m_scrollPosX = 0;
-	}
-	else if (editorX > editorWidth - 50) {
-		m_scrollPosX += 50;
-
-		if (m_scrollPosX + editorWidth > m_lines.GetWidth()) {
-			m_scrollPosX = m_lines.GetWidth() - editorWidth;
-			m_scrollPosX = wxMax(m_scrollPosX, 0);
-		}
-	}
-
-	// Move caret to insertion point
-	const wxPoint mpos = ClientPosToEditor(x, y);
-	m_lines.ClickOnLine(mpos.x, mpos.y);
-
-	DrawLayout();
 }
 
 void EditorCtrl::OnDragDropText(const wxString& text, wxDragResult dragType) {
@@ -10200,40 +10043,6 @@ void EditorCtrl::TestMilestones() {
 
 #endif //__WXDEBUG__
 
-// -- Editor DragDropTarget -----------------------------------------------------------------
-
-DragDropTarget::DragDropTarget(EditorCtrl& editor) : m_editor(editor) {
-	m_fileObject = new wxFileDataObject;
-	m_textObject = new wxTextDataObject;
-	m_columnObject = new MultilineDataObject;
-	m_dataObject = new wxDataObjectComposite;
-
-	// Specify the type of data we will accept
-	m_dataObject->Add(m_columnObject, true /*preferred*/); // WORKAROUND: has to be first as wxDropTarget ignores preferred
-	m_dataObject->Add(m_fileObject);
-	m_dataObject->Add(m_textObject);
-	SetDataObject(m_dataObject);
-}
-
-wxDragResult DragDropTarget::OnData(wxCoord WXUNUSED(x), wxCoord WXUNUSED(y), wxDragResult def) {
-	// Copy the data from the drag source to our data object
-	GetData();
-
-	const wxDataFormat df = m_dataObject->GetReceivedFormat();
-	if (df == wxDF_TEXT || df == wxDF_UNICODETEXT) {
-		m_editor.OnDragDropText(m_textObject->GetText(), def);
-	}
-    else if (df == wxDF_FILENAME) {
-		m_editor.OnDragDrop(m_fileObject->GetFilenames());
-	}
-	else if (df == wxDataFormat(MultilineDataObject::FormatId)) {
-		wxArrayString text;
-		m_columnObject->GetText(text);
-		m_editor.OnDragDropColumn(text, def);
-	}
-
-	return def;
-}
 
 void EditorCtrl::NavigateSelections() {
 	m_selectionsStyler.EnableNavigation();

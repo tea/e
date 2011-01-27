@@ -379,7 +379,6 @@ public:
 	void ShowScopeTip();
 
 	// Drag-and-drop operations
-	void OnDragOver(wxCoord x, wxCoord y);
 	void OnDragDrop(const wxArrayString& filenames);
 	void OnDragDropText(const wxString& text, wxDragResult dragType);
 	void OnDragDropColumn(const wxArrayString& text, wxDragResult dragType);
@@ -502,7 +501,6 @@ private:
 	void OnMouseCaptureLost(wxMouseCaptureLostEvent& event);
 	void OnMouseDClick(wxMouseEvent& event);
 	void OnMouseMotion(wxMouseEvent& event);
-	void OnMouseWheel(wxMouseEvent& event);
 	void OnLeaveWindow(wxMouseEvent& event);
 	void OnScroll(wxScrollWinEvent& event);
 	void OnScrollBar(wxScrollEvent& event);
@@ -514,8 +512,8 @@ private:
 	DECLARE_EVENT_TABLE();
 
 	// Called by event handlers to do the bulk of some operation.
+	void ProcessVerticalMouseWheel(wxMouseEvent& event);
 	void DoVerticalWheelScroll(wxMouseEvent& event);
-	void DoHorizontalWheelScroll(wxMouseEvent& event);
 
 	void StartDragSelectedText(void);
 
@@ -533,7 +531,7 @@ private:
 	bool ProcessCommandModeKey(wxKeyEvent& event);
 
 public:
-	// Used by GutterControl
+	// Used by GutterControl and EditorArea
 	void DrawLayout(bool isScrolling=false);
 
 protected:
@@ -662,7 +660,6 @@ protected:
 	bool m_enableDrawing;
 	bool m_isResizing;
 	int scrollPos;
-	int m_scrollPosX;
 	int topline;
 	bool commandMode;
 	unsigned int m_changeToken;
