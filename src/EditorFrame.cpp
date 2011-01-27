@@ -1583,7 +1583,7 @@ void EditorFrame::GotoPos(int line, int column) {
 	wxASSERT(editorCtrl);
 
 	editorCtrl->SetPos(line, column);
-	editorCtrl->MakeCaretVisibleCenter();
+	editorCtrl->MakeCaretVisible(true);
 	editorCtrl->ReDraw();
 	editorCtrl->SetFocus();
 }
@@ -3239,7 +3239,7 @@ void EditorFrame::OnMenuGotoLine(wxCommandEvent& WXUNUSED(event)) {
 	GotoLineDlg dlg(this, line, 1, max);
 	if (dlg.ShowModal() == wxID_OK) {
 		editorCtrl->SetPos(dlg.GetLine(), 0);
-		editorCtrl->MakeCaretVisibleCenter();
+		editorCtrl->MakeCaretVisible(true);
 		editorCtrl->ReDraw();
 	}
 }

@@ -8,16 +8,32 @@
 
 #include "key_hook.h"
 
+class LiveCaret;
 class EditorCtrl;
 class EditorArea : public KeyHookable<wxControl> {
 public:
 	EditorArea(class EditorCtrl& parent, wxWindowID id);
+
+	unsigned int GetHeight() const {return GetClientSize().y;}
+
+	void KeepCaretAlive(bool keepalive);
+	bool IsCaretVisible() const;
+	bool IsCaretBeyondScreen() const;
+	void SetCaretPos(const wxPoint& cpos);
+	void SetCaretSize(unsigned int sizeY);
+	void HideCaret();
+	bool MakeCaretVisible();
+	void MakeCaretVisibleCenter();
+	unsigned int GetCaretWidth() const {return m_caretWidth;}
+	unsigned int GetCaretHeight() const {return m_caretHeight;}
 
 protected:
 	virtual bool OnPreKeyDown(wxKeyEvent& event);
 	virtual bool OnPreKeyUp(wxKeyEvent& event);
 
 private:
+	void Init();
+
 	// Event handlers
 	void OnPaint(wxPaintEvent& event);
 	void OnEraseBackground(wxEraseEvent& event);
@@ -36,6 +52,10 @@ private:
 	DECLARE_EVENT_TABLE();
 
 	EditorCtrl& m_editor;
+
+	LiveCaret* m_caret;
+	static const unsigned int m_caretWidth;
+	unsigned int m_caretHeight;
 };
 
 #endif // __EDITORAREA_H__

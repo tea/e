@@ -349,7 +349,7 @@ void StatusBar::OnMenuGotoSymbol(wxCommandEvent& event) {
 	const unsigned int ndx = event.GetId() - 5000;
 	if (m_editorCtrl && ndx < m_symbols.size()) {
 		m_editorCtrl->SetPos(m_symbols[ndx].start);
-		m_editorCtrl->MakeCaretVisibleCenter();
+		m_editorCtrl->MakeCaretVisible(true);
 		m_editorCtrl->ReDraw();
 	}
 }

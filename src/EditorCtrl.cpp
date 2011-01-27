@@ -41,7 +41,6 @@
 #include "Fold.h"
 #include "TextTip.h"
 #include "RemoteThread.h"
-#include "LiveCaret.h"
 #include "eSettings.h"
 #include "IAppPaths.h"
 #include "Strings.h"
@@ -125,7 +124,6 @@ BEGIN_EVENT_TABLE(EditorCtrl, wxControl)
 END_EVENT_TABLE()
 
 // Initialize statics
-const unsigned int EditorCtrl::m_caretWidth = 2;
 unsigned long EditorCtrl::s_ctrlDownTime = 0;
 bool EditorCtrl::s_altGrDown = false;
 
@@ -420,30 +418,12 @@ void EditorCtrl::Init() {
 	m_lastScopePos = -1; // scope selection
 	if (!doShowMargin) m_wrapAtMargin = false;
 
-	m_area = new EditorArea(*this, wxID_ANY);
-
-	// Initialize gutter (line numbers)
-	m_gutterCtrl = new GutterCtrl(m_area, *this, wxID_ANY);
-	m_gutterCtrl->Hide();
-	m_showGutter = false;
-	m_gutterLeft = true; // left side is default
-	m_gutterWidth = 0;
-	SetShowGutter(m_parentFrame.IsGutterShown());
-
-	m_leftScrollbar = NULL; // default is using internal (right) scrollbar
-	m_leftScrollWidth = 0;
-
 	// To keep track of when we should freeze versions
 	lastpos = 0;
 	lastaction = ACTION_INSERT;
 
 	// Initialize tooltips
 	//m_revTooltip.Create(this);
-
-	// resize the bitmap used for doublebuffering
-	wxSize size = m_area->GetClientSize();
-	if (bitmap.GetWidth() < size.x || bitmap.GetHeight() < size.y)
-		bitmap = wxBitmap(size.x, size.y);
 
 	// Init the lines
 	m_lines.SetWordWrap(m_parentFrame.GetWrapMode());
@@ -465,14 +445,23 @@ void EditorCtrl::Init() {
 	if (!doShowMargin) marginChars = 0;
 	m_lines.ShowMargin(marginChars);
 
-	// Create a caret to indicate edit position
-	m_caretHeight = m_lines.GetLineHeight();
-	caret = new LiveCaret(m_area, m_caretWidth, m_caretHeight); // will be deleted by window on destroy
-	caret->Move(0, 0);
-	m_area->SetCaret(caret);
-	caret->Show();
+	m_area = new EditorArea(*this, wxID_ANY);
 
-	m_area->SetCursor(wxCursor(wxCURSOR_IBEAM));
+	// Initialize gutter (line numbers)
+	m_gutterCtrl = new GutterCtrl(m_area, *this, wxID_ANY);
+	m_gutterCtrl->Hide();
+	m_showGutter = false;
+	m_gutterLeft = true; // left side is default
+	m_gutterWidth = 0;
+	SetShowGutter(m_parentFrame.IsGutterShown());
+
+	m_leftScrollbar = NULL; // default is using internal (right) scrollbar
+	m_leftScrollWidth = 0;
+
+	// resize the bitmap used for doublebuffering
+	wxSize size = m_area->GetClientSize();
+	if (bitmap.GetWidth() < size.x || bitmap.GetHeight() < size.y)
+		bitmap = wxBitmap(size.x, size.y);
 
 	// Set drop target so files and text can be dragged from explorer to trigger drag commands
 	DragDropTarget* dropTarget = new DragDropTarget(*this);
@@ -928,7 +917,7 @@ bool EditorCtrl::UpdateScrollbars(unsigned int x, unsigned int y) {
 
 	// Check if we need a horizontal scrollbar
 	const int scrollThumbX = m_area->GetScrollThumb(wxHORIZONTAL);
-	const unsigned int width = m_lines.GetWidth() + m_caretWidth;
+	const unsigned int width = m_lines.GetWidth() + m_area->GetCaretWidth();
 	if ((m_lines.GetWrapMode() == cxWRAP_NONE || m_wrapAtMargin) && width > x) {
 		m_scrollPosX = wxMin(m_scrollPosX, (int)(width-x));
 		m_scrollPosX = wxMax(0, m_scrollPosX);
@@ -1084,7 +1073,7 @@ void EditorCtrl::DrawLayout(wxDC& dc, bool WXUNUSED(isScrolling)) {
 	if (UpdateScrollbars(editorSizeX, size.y)) return; // adding/removing scrollbars send size event
 
 	// avoid leaving a caret trace
-	if (caret->IsVisible()) caret->Hide();
+	m_area->HideCaret();
 
 	// Copy MemoryDC to Display
 	const unsigned int xpos = m_leftScrollWidth + (m_gutterLeft ? m_gutterWidth : 0);
@@ -1097,10 +1086,9 @@ void EditorCtrl::DrawLayout(wxDC& dc, bool WXUNUSED(isScrolling)) {
 	if (m_lines.IsCaretInPreparedPos()) {
 		// Move the caret to the new position
 		m_lines.UpdateCaretPos();
-		if (IsCaretVisible()) {
+		if (m_area->IsCaretVisible()) {
 			const wxPoint cpos = GetCaretPoint();
-			caret->Move(cpos);
-			caret->Show();
+			m_area->SetCaretPos(GetCaretPoint());
 		}
 	}
 
@@ -3358,8 +3346,8 @@ void EditorCtrl::ApplyDiff(const doc_id& oldDoc, bool moveToFirstChange) {
 			SetPos(changePos);
 			wxLogDebug(wxT("changepos: %d"), changePos);
 		}
-		if (!IsCaretVisible())
-			MakeCaretVisibleCenter();
+		if (!m_area->IsCaretVisible())
+			MakeCaretVisible(true);
 	}
 }
 
@@ -5348,7 +5336,7 @@ void EditorCtrl::ShowCompletionPopup(const wxArrayString& completions) {
 	const wxPoint firstCharPos = m_lines.GetCharPos(iv.start);
 	const wxPoint lastCharPos = m_lines.GetCharPos(iv.end);
 	const wxPoint popupTopPos = m_area->ClientToScreen(EditorPosToClient(firstCharPos.x, lastCharPos.y));
-	const wxPoint popupPos(popupTopPos.x, popupTopPos.y + m_caretHeight);
+	const wxPoint popupPos(popupTopPos.x, popupTopPos.y + m_area->GetCaretHeight());
 
 	// The popup will delete itself when done
 	const wxString target = GetText(iv.start, iv.end);
@@ -5549,8 +5537,8 @@ bool EditorCtrl::DoFind(const wxString& text, unsigned int start_pos, int option
 		m_lines.SetPos(sr.end, false);
 
 		// Make sure the new selection is shown
-		if (!IsCaretVisible()) {
-			MakeCaretVisibleCenter(); // first center vertically
+		if (!m_area->IsCaretVisible()) {
+			MakeCaretVisible(true); // first center vertically
 			MakeSelectionVisible();
 		}
 
@@ -6400,16 +6388,12 @@ void EditorCtrl::OnChar(wxKeyEvent& event) {
 					if (scrollPos < 0) scrollPos = 0;
 
 					// Make sure caret stays visible
-					const wxPoint cpos = m_lines.GetCaretPos();
-					const wxSize clientsize = m_area->GetClientSize();
-					const wxSize caretsize = caret->GetSize();
-					if (cpos.y + caretsize.y >= scrollPos + clientsize.y) {
-						if (lastaction == ACTION_UP) m_lines.ClickOnLine(lastxpos, scrollPos + clientsize.y - 1);
-						else {
-							lastxpos = cpos.x;
-							m_lines.ClickOnLine(cpos.x, scrollPos + clientsize.y - 1);
+					if (m_area->IsCaretBeyondScreen()) {
+						if (lastaction != ACTION_UP) {
+							lastxpos = m_lines.GetCaretPos().x;
+							lastaction = ACTION_UP;
 						}
-						lastaction = ACTION_UP;
+						m_lines.ClickOnLine(lastxpos, scrollPos + m_area->GetHeight() - 1);
 					}
 
 					// Draw the updated view (without first calling MakeCaretVisible())
@@ -6423,20 +6407,18 @@ void EditorCtrl::OnChar(wxKeyEvent& event) {
 					CursorDown(SEL_SELECT);
 				}
 				else {
-					const wxSize size = GetClientSize();
+					const wxSize size = m_area->GetClientSize();
 					scrollPos = scrollPos - (scrollPos % m_lines.GetLineHeight()) + m_lines.GetLineHeight();
 					const int lastVisibleTopPos = wxMax(0, m_lines.GetHeight() - size.y);
 					scrollPos = wxMin(lastVisibleTopPos, scrollPos);
 
 					// Make sure caret stays visible
-					const wxPoint cpos = m_lines.GetCaretPos();
-					if (cpos.y < scrollPos) {
-						if (lastaction == ACTION_DOWN) m_lines.ClickOnLine(lastxpos, scrollPos + 1);
-						else {
-							lastxpos = cpos.x;
-							m_lines.ClickOnLine(cpos.x, scrollPos + 1);
+					if (m_area->IsCaretBeyondScreen()) {
+						if (lastaction != ACTION_DOWN) {
+							lastxpos = m_lines.GetCaretPos().x;
+							lastaction = ACTION_DOWN;
 						}
-						lastaction = ACTION_DOWN;
+						m_lines.ClickOnLine(lastxpos, scrollPos + 1);
 					}
 
 					// Draw the updated view (without first calling MakeCaretVisible())
@@ -6674,7 +6656,7 @@ void EditorCtrl::OnChar(wxKeyEvent& event) {
 	// The act of drawing can change the view dimensions by
 	// adding/removing scrollbars. So we just check if the
 	// caret has been pushed out of the view.
-	if (MakeCaretVisible()) DrawLayout();
+	if (m_area->MakeCaretVisible()) DrawLayout();
 }
 
 void EditorCtrl::DoCommand(int c) {
@@ -7836,69 +7818,11 @@ bool EditorCtrl::GetContainingObjectBlock(wxChar brace, size_t pos, interval& iv
 	cxENDLOCK
 }
 
-
-bool EditorCtrl::IsCaretVisible() {
-	const wxSize caretsize = caret->GetSize();
-	const wxPoint cpos = m_lines.GetCaretPos();
-	const wxSize clientsize = m_area->GetClientSize();
-
-	// Check vertically
-	if (cpos.y + caretsize.y < scrollPos) return false;
-	if (cpos.y >= scrollPos + clientsize.y) return false;
-
-	// Check horizontally
-	if (cpos.x + caretsize.x < m_scrollPosX) return false;
-
-	const int sizeX = ClientWidthToEditor(clientsize.x);
-	if (cpos.x >= m_scrollPosX + sizeX) return false;
-
-	return true;
-}
-
-bool EditorCtrl::MakeCaretVisible() {
-	const wxPoint cpos = m_lines.GetCaretPos();
-	const wxSize clientsize = m_area->GetClientSize();
-
-	// Check if the caret have moved outside visible display vertically
-	if (cpos.y < scrollPos) {
-		scrollPos = cpos.y;
-		return true;
-	}
-
-	const int lineheight = m_lines.GetLineHeight();
-	if (cpos.y + lineheight > scrollPos + clientsize.y) {
-		scrollPos = (cpos.y + lineheight) - clientsize.y;
-		return true;
-	}
-
-	// Check if the caret have moved outside visible display horizontally
-	if (cpos.x < m_scrollPosX) {
-		m_scrollPosX = wxMax(cpos.x - 50, 0);
-		return true;
-	}
-
-	const int sizeX = ClientWidthToEditor(clientsize.x);
-	if (cpos.x >= m_scrollPosX + sizeX) {
-		const int textWidth = m_lines.GetWidth();
-		const int maxScrollPos = (textWidth < sizeX) ? 0 : textWidth + m_caretWidth - sizeX; // room for caret at end
-		m_scrollPosX = (cpos.x + 50) - sizeX;
-		if (m_scrollPosX > maxScrollPos) m_scrollPosX = maxScrollPos;
-		return true;
-	}
-
-	return false; // no movement
-	// NOTE: Will first be visible on next redraw
-}
-
-void EditorCtrl::MakeCaretVisibleCenter() {
-	const wxPoint cpos = m_lines.GetCaretPos();
-	const wxSize clientsize = m_area->GetClientSize();
-
-	scrollPos = cpos.y - (clientsize.y / 2);
-	if (scrollPos < 0) scrollPos = 0;
-
-	// Go to start of line
-	m_scrollPosX = 0;
+void EditorCtrl::MakeCaretVisible(bool center) {
+	if (center)
+		m_area->MakeCaretVisibleCenter();
+	else
+		m_area->MakeCaretVisible();
 }
 
 void EditorCtrl::MakeSelectionVisible(unsigned int sel_id) {
@@ -7939,7 +7863,7 @@ void EditorCtrl::MakeSelectionVisible(unsigned int sel_id) {
 }
 
 void EditorCtrl::KeepCaretAlive(bool keepAlive) {
-	caret->KeepAlive(keepAlive);
+	m_area->KeepCaretAlive(keepAlive);
 }
 
 wxString EditorCtrl::GetSelFirstLine() {
@@ -8101,7 +8025,7 @@ void EditorCtrl::SetEnv(cxEnv& env, bool isUnix, const tmBundle* bundle) {
 	}
 
 	// TM_CARET_XPOS & TM_CARET_YPOS
-	if (IsCaretVisible()) {
+	if (m_area->IsCaretVisible()) {
 		const wxPoint caretPos = GetCaretPoint();
 		const wxPoint screenPos = m_area->ClientToScreen(caretPos);
 		env.SetEnv(wxT("TM_CARET_XPOS"), wxString::Format(wxT("%d"), screenPos.x));
@@ -8564,7 +8488,7 @@ int EditorCtrl::ShowPopupList(wxMenu& menu) {
 	const wxPoint tipPos = m_area->ClientToScreen(caretPoint);
 
 	m_popupMenuChoice = -1;
-	PopupMenu(&menu, caretPoint.x, caretPoint.y + m_caretHeight);
+	PopupMenu(&menu, caretPoint.x, caretPoint.y + m_area->GetCaretHeight());
 
 	// It returns the menu ids - 1000
 	return m_popupMenuChoice;
@@ -8580,7 +8504,7 @@ void EditorCtrl::ShowTipAtCaret(const wxString& text) {
 
 	if (m_activeTooltip) m_activeTooltip->Close();
 
-	m_activeTooltip = new TextTip(m_area, text, m_area->ClientToScreen(GetCaretPoint()), wxSize(0, m_caretHeight), &m_activeTooltip);
+	m_activeTooltip = new TextTip(m_area, text, m_area->ClientToScreen(GetCaretPoint()), wxSize(0, m_area->GetCaretHeight()), &m_activeTooltip);
 }
 
 const deque<const wxString*> EditorCtrl::GetScope() {
@@ -8995,8 +8919,7 @@ void EditorCtrl::OnThemeChanged(EditorCtrl* self, void* WXUNUSED(data), int WXUN
 	if (mdcFont != themeFont) {
 		self->mdc.SetFont(themeFont);
 		self->m_lines.UpdateFont(); // also invalidates line positions
-		self->m_caretHeight = self->m_lines.GetLineHeight();
-		self->caret->SetSize(2, self->m_caretHeight);
+		self->m_area->SetCaretSize(self->m_lines.GetLineHeight());
 	}
 	else self->m_lines.Invalidate();
 
@@ -9055,8 +8978,7 @@ void EditorCtrl::OnBundlesReloaded(EditorCtrl* self, void* WXUNUSED(data), int W
 	if (self->mdc.GetFont() != self->m_theme.font) {
 		self->mdc.SetFont(self->m_theme.font);
 		self->m_lines.UpdateFont();
-		self->m_caretHeight = self->m_lines.GetLineHeight();
-		self->caret->SetSize(2, self->m_caretHeight);
+		self->m_area->SetCaretSize(self->m_lines.GetLineHeight());
 	}
 	else self->m_lines.Invalidate();
 
@@ -9295,7 +9217,7 @@ void EditorCtrl::OnDragDrop(const wxArrayString& filenames) {
 
 void EditorCtrl::GotoSymbolPos(unsigned int pos) {
 	SetPos(pos);
-	MakeCaretVisibleCenter();
+	MakeCaretVisible(true);
 	ReDraw();
 	SetFocus();
 }

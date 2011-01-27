@@ -55,7 +55,6 @@ class PreviewDlg;
 class cxRemoteAction;
 class TextTip;
 class eFrameSettings;
-class LiveCaret;
 
 struct thTheme;
 class tmAction;
@@ -337,11 +336,8 @@ public:
 	void ProcessMouseWheel(wxMouseEvent& event);
 
 	// Caret and Selection Visibility
-private:
-	bool IsCaretVisible();
 public:
-	bool MakeCaretVisible();
-	void MakeCaretVisibleCenter();
+	void MakeCaretVisible(bool center = false);
 	void MakeSelectionVisible(unsigned int sel_id = 0);
 	void KeepCaretAlive(bool keepAlive=true);
 
@@ -703,15 +699,12 @@ protected:
 	unsigned int m_gutterWidth;
 	wxScrollBar* m_leftScrollbar;
 	unsigned int m_leftScrollWidth;
-	LiveCaret* caret;
 	wxMemoryDC mdc;
 	int old_scrollPos; // set by OnScroll when scrolling
 	wxFileName m_path;
 	wxString m_remotePath;
 	const RemoteProfile* m_remoteProfile;
 	vector<int> commandStack;
-	static const unsigned int m_caretWidth;
-	unsigned int m_caretHeight;
 	wxString m_mate;
 	ModSkipState m_modSkipState;
 
