@@ -542,7 +542,6 @@ protected:
 	void HandleScroll(int orientation, int position, wxEventType eventType);
 
 	// Coord conversion
-	unsigned int ClientWidthToEditor(unsigned int width) const;
 	wxPoint ClientPosToEditor(unsigned int xpos, unsigned int ypos) const;
 	wxPoint EditorPosToClient(unsigned int xpos, unsigned int ypos) const;
 	wxPoint GetCaretPoint() const;

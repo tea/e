@@ -428,7 +428,7 @@ void EditorCtrl::Init() {
 	m_area = new EditorArea(*this, wxID_ANY);
 
 	// Initialize gutter (line numbers)
-	m_gutterCtrl = new GutterCtrl(m_area, *this, wxID_ANY);
+	m_gutterCtrl = new GutterCtrl(*this, wxID_ANY);
 	m_gutterCtrl->Hide();
 	m_showGutter = false;
 	m_gutterLeft = true; // left side is default
@@ -718,7 +718,7 @@ void EditorCtrl::SetShowGutter(bool showGutter) {
 	}
 
 	m_showGutter = showGutter;
-	DrawLayout();
+	ReLayout();
 }
 
 void EditorCtrl::SetShowIndent(bool showIndent) {
@@ -800,7 +800,7 @@ const wxFont& EditorCtrl::GetEditorFont() const { return mdc.GetFont(); }
 void EditorCtrl::SetGutterRight(bool doMove) {
 	m_gutterLeft = !doMove;
 	m_gutterCtrl->SetGutterRight(doMove);
-	DrawLayout();
+	ReLayout();
 }
 
 bool EditorCtrl::HasScrollbar() const {
@@ -912,27 +912,14 @@ void EditorCtrl::DrawLayout(wxDC& dc, bool WXUNUSED(isScrolling)) {
 
 	// Get view dimensions
 	const wxSize size = m_area->GetClientSize();
-	if (size.x == 0 || size.y == 0) return; // Nothing to draw
-
-	if (m_showGutter) {
-		m_gutterWidth = m_gutterCtrl->CalcLayout(size.y);
-
-		// Move gutter to correct position
-		const unsigned int gutterxpos = m_gutterLeft ? 0 : size.x - m_gutterWidth;
-		if (m_gutterCtrl->GetPosition().x != (int)gutterxpos) {
-			m_gutterCtrl->SetPosition(wxPoint(gutterxpos, 0));
-		}
-	}
-	const unsigned int editorSizeX = ClientWidthToEditor(size.x);
-
 	// There may only be room for the gutter
-	if (editorSizeX == 0) {
+	if (size.x == 0 || size.y == 0) {
 		if (m_showGutter) m_gutterCtrl->DrawGutter();
 		return;
 	}
 	
 	// Resize the bitmap used for doublebuffering
-	if (bitmap.GetWidth() < (int)editorSizeX || bitmap.GetHeight() < size.y) {
+	if (bitmap.GetWidth() < size.x || bitmap.GetHeight() < size.y) {
 		// disassociate and release mem for old bitmap
 		mdc.SelectObjectAsSource(wxNullBitmap);
 		bitmap = wxNullBitmap;
@@ -960,9 +947,9 @@ void EditorCtrl::DrawLayout(wxDC& dc, bool WXUNUSED(isScrolling)) {
 	else {
 		scrollPos = wxMin(scrollPos, wxMax(0, m_lines.GetHeight()-size.y));
 
-		if (m_isResizing && editorSizeX != m_lines.GetDisplayWidth()) {
+		if (m_isResizing && size.x != (int)m_lines.GetDisplayWidth()) {
 			const int newtopline = m_lines.GetLineFromYPos(scrollPos);
-			const unsigned int lineWidth = (m_wrapAtMargin && m_lines.GetWrapMode() != cxWRAP_NONE) ? m_lines.GetMarginPos() : editorSizeX;
+			const unsigned int lineWidth = (m_wrapAtMargin && m_lines.GetWrapMode() != cxWRAP_NONE) ? m_lines.GetMarginPos() : size.x;
 			m_lines.SetWidth(lineWidth, newtopline);
 
 			// If there are folds, we have to make sure all line positions are valid
@@ -984,14 +971,14 @@ void EditorCtrl::DrawLayout(wxDC& dc, bool WXUNUSED(isScrolling)) {
 	wxASSERT(scrollPos <= m_lines.GetHeight());
 
 	// Check if we need to adjust scrollbar
-	if (UpdateScrollbars(editorSizeX, size.y)) return; // adding/removing scrollbars send size event
+	if (UpdateScrollbars(size.x, size.y)) return; // adding/removing scrollbars send size event
 
 	// Make sure we remove un-needed stylers
 	if (!(m_parentFrame.IsSearching() || m_commandHandler.IsSearching()))
 		m_search_hl_styler.Clear(); // Only highlight search terms during search
 
 	// When scrolling, we can just draw the new parts
-	wxRect rect(0, scrollPos, editorSizeX, size.y);
+	wxRect rect(0, scrollPos, size.x, size.y);
 	/*if (isScrolling && scrollPos != old_scrollPos && this == FindFocus()) {
 		// If there is overlap, then move the image
 		if (scrollPos + size.y > old_scrollPos && scrollPos < old_scrollPos + size.y) {
@@ -1029,17 +1016,16 @@ void EditorCtrl::DrawLayout(wxDC& dc, bool WXUNUSED(isScrolling)) {
 	// line dimensions causing the dimesions of the entire document
 	// to have changed. So we have to check if the scrollbars should
 	// be updated again.
-	if (UpdateScrollbars(editorSizeX, size.y)) return; // adding/removing scrollbars send size event
+	if (UpdateScrollbars(size.x, size.y)) return; // adding/removing scrollbars send size event
 
 	// avoid leaving a caret trace
 	m_area->HideCaret();
 
 	// Copy MemoryDC to Display
-	const unsigned int xpos = m_gutterLeft ? m_gutterWidth : 0;
 #ifdef __WXMSW__
-	::BitBlt(GetHdcOf(dc), xpos, 0,(int)editorSizeX, (int)size.y, GetHdcOf(mdc), 0, 0, SRCCOPY);
+	::BitBlt(GetHdcOf(dc), 0, 0,(int)size.x, (int)size.y, GetHdcOf(mdc), 0, 0, SRCCOPY);
 #else
-	dc.Blit(xpos, 0,  editorSizeX, size.y, &mdc, 0, 0);
+	dc.Blit(0, 0,  size.x, size.y, &mdc, 0, 0);
 #endif
 
 	if (m_lines.IsCaretInPreparedPos()) {
@@ -1064,22 +1050,12 @@ void EditorCtrl::DrawLayout(wxDC& dc, bool WXUNUSED(isScrolling)) {
 	m_isResizing = false;
 }
 
-unsigned int EditorCtrl::ClientWidthToEditor(unsigned int width) const {
-	return (width > m_gutterWidth) ? (width - (m_gutterWidth)) : 0;
-}
-
 wxPoint EditorCtrl::ClientPosToEditor(unsigned int xpos, unsigned int ypos) const {
-	unsigned int adjXpos = xpos + m_area->GetScrollPosX();
-	if (m_gutterLeft) adjXpos -= m_gutterWidth;
-
-	return wxPoint(adjXpos, ypos + scrollPos);
+	return wxPoint(xpos + m_area->GetScrollPosX(), ypos + scrollPos);
 }
 
 wxPoint EditorCtrl::EditorPosToClient(unsigned int xpos, unsigned int ypos) const {
-	unsigned int adjXpos = (xpos - m_area->GetScrollPosX());
-	if (m_gutterLeft) adjXpos += m_gutterWidth;
-
-	return wxPoint(adjXpos, ypos - scrollPos);
+	return wxPoint(xpos - m_area->GetScrollPosX(), ypos - scrollPos);
 }
 
 wxPoint EditorCtrl::GetCaretPoint() const {
@@ -1089,10 +1065,9 @@ wxPoint EditorCtrl::GetCaretPoint() const {
 
 unsigned int EditorCtrl::UpdateEditorWidth() {
 	const wxSize size = m_area->GetClientSize();
-	const unsigned int width = ClientWidthToEditor(size.x);
-	m_lines.SetWidth(width);
+	m_lines.SetWidth(size.x);
 
-	return width;
+	return size.x;
 }
 
 wxString EditorCtrl::GetNewIndentAfterNewline(unsigned int lineid) {
@@ -6228,12 +6203,25 @@ bool EditorCtrl::ReplaceAllRegex(const wxString& regex, const wxString& replacet
 */
 
 void EditorCtrl::OnSize(wxSizeEvent& WXUNUSED(event)) {
-	ReLayout();
+	if (m_area) ReLayout();
 }
 
 void EditorCtrl::ReLayout() {
 	wxRect rect = GetClientSize();
-	rect.SetLeft(m_leftScrollWidth);
+	rect.x += m_leftScrollWidth;
+	rect.width -= m_leftScrollWidth;
+	if (m_showGutter) {
+		m_gutterWidth = m_gutterCtrl->CalcLayout(rect.GetHeight());
+		wxRect gutter_rect = rect;
+		gutter_rect.width = m_gutterWidth;
+		rect.width -= m_gutterWidth;
+		if (m_gutterLeft) {
+			rect.x += m_gutterWidth;
+		} else {
+			gutter_rect.x += rect.GetWidth();
+		}
+		m_gutterCtrl->SetSize(gutter_rect);
+	}
 	if (m_area) {
 		m_area->SetSize(rect);
 	}

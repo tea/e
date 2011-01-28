@@ -105,11 +105,10 @@ bool EditorArea::MakeCaretVisible() {
 		return true;
 	}
 
-	const int sizeX = m_editor.ClientWidthToEditor(clientsize.x);
-	if (cpos.x >= m_scrollPosX + sizeX) {
+	if (cpos.x >= m_scrollPosX + clientsize.x) {
 		const int textWidth = m_editor.GetLines().GetWidth();
-		const int maxScrollPos = (textWidth < sizeX) ? 0 : textWidth + m_caretWidth - sizeX; // room for caret at end
-		m_scrollPosX = (cpos.x + 50) - sizeX;
+		const int maxScrollPos = (textWidth < clientsize.x) ? 0 : textWidth + m_caretWidth - clientsize.x; // room for caret at end
+		m_scrollPosX = (cpos.x + 50) - clientsize.x;
 		if (m_scrollPosX > maxScrollPos) m_scrollPosX = maxScrollPos;
 		return true;
 	}
@@ -141,8 +140,7 @@ bool EditorArea::IsCaretVisible() const {
 	// Check horizontally
 	if (cpos.x + caretsize.x < m_scrollPosX) return false;
 
-	const int sizeX = m_editor.ClientWidthToEditor(clientsize.x);
-	if (cpos.x >= m_scrollPosX + sizeX) return false;
+	if (cpos.x >= m_scrollPosX + clientsize.x) return false;
 
 	return true;
 }
@@ -167,19 +165,17 @@ void EditorArea::MakeSelectionVisible(const wxPoint& sel_start, const wxPoint& s
 		}
 	}
 
-	const int sizeX = m_editor.ClientWidthToEditor(clientsize.x);
-
 	// Horizontally for End
 	if (sel_end.x < m_scrollPosX)
 		m_scrollPosX = wxMax(sel_end.x - 50, 0);
-	else if (sel_end.x >= m_scrollPosX + sizeX)
-		m_scrollPosX = (sel_end.x + 50) - sizeX;
+	else if (sel_end.x >= m_scrollPosX + clientsize.x)
+		m_scrollPosX = (sel_end.x + 50) - clientsize.x;
 
 	// Horizontally for Start
 	if (sel_start.x < m_scrollPosX)
 		m_scrollPosX = wxMax(sel_start.x - 50, 0);
-	else if (sel_start.x >= m_scrollPosX + sizeX)
-		m_scrollPosX = (sel_start.x + 50) - sizeX;
+	else if (sel_start.x >= m_scrollPosX + clientsize.x)
+		m_scrollPosX = (sel_start.x + 50) - clientsize.x;
 
 	// NOTE: Will first be visible on next redraw
 }
@@ -311,17 +307,15 @@ void EditorArea::OnDragOver(wxCoord x, wxCoord y) {
 	}
 
 	// Check if we should scroll horizontal
-	const int editorX = m_editor.ClientWidthToEditor(x);
-	const int editorWidth = m_editor.ClientWidthToEditor(size.x);
-	if (editorX < scrollBorder) {
+	if (x < scrollBorder) {
 		m_scrollPosX -= 50;
 		if (m_scrollPosX < 0) m_scrollPosX = 0;
 	}
-	else if (editorX > editorWidth - 50) {
+	else if (x > size.x - 50) {
 		m_scrollPosX += 50;
 
-		if (m_scrollPosX + editorWidth > m_editor.GetLines().GetWidth()) {
-			m_scrollPosX = m_editor.GetLines().GetWidth() - editorWidth;
+		if (m_scrollPosX + size.x > m_editor.GetLines().GetWidth()) {
+			m_scrollPosX = m_editor.GetLines().GetWidth() - size.x;
 			m_scrollPosX = wxMax(m_scrollPosX, 0);
 		}
 	}
