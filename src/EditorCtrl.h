@@ -536,6 +536,7 @@ public:
 
 protected:
 	// Drawing
+	void ReLayout();
 	void DrawLayout(wxDC& dc, bool isScrolling=false);
 	bool UpdateScrollbars(unsigned int x, unsigned int y);
 	void HandleScroll(int orientation, int position, wxEventType eventType);

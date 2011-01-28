@@ -810,7 +810,7 @@ bool EditorCtrl::HasScrollbar() const {
 
 void EditorCtrl::SetScrollbarLeft(bool doMove) {
 	if (doMove) {
-		m_leftScrollbar = new wxScrollBar(m_area, ID_LEFTSCROLL, wxPoint(0,0), wxDefaultSize, wxSB_VERTICAL);
+		m_leftScrollbar = new wxScrollBar(this, ID_LEFTSCROLL, wxPoint(0,0), wxDefaultSize, wxSB_VERTICAL);
 		m_leftScrollbar->SetCursor(*wxSTANDARD_CURSOR); // Set to standard cursor (otherwise it will inherit from editorCtrl)
 
 		const bool isShown = (m_area->GetScrollThumb(wxVERTICAL) > 0);
@@ -818,7 +818,6 @@ void EditorCtrl::SetScrollbarLeft(bool doMove) {
 			m_leftScrollWidth = m_leftScrollbar->GetSize().x;
 
 			m_area->SetScrollbar(wxVERTICAL, 0, 0, 0); // hide windows own scrollbar
-			return; // removing scrollbar will have sent draw event
 		}
 	}
 	else {
@@ -827,8 +826,7 @@ void EditorCtrl::SetScrollbarLeft(bool doMove) {
 		m_leftScrollWidth = 0;
 	}
 
-	m_isResizing = true;
-	DrawLayout();
+	ReLayout();
 }
 
 //
@@ -860,14 +858,14 @@ bool EditorCtrl::UpdateScrollbars(unsigned int x, unsigned int y) {
 			
 			if (m_leftScrollWidth != width) {
 				m_leftScrollWidth = width;
-				ReDraw();
+				ReLayout();
 				return true; // cancel old redraw
 			}
 		}
 		else if (scroll_thumb > 0) {
 			m_leftScrollbar->Hide();
 			m_leftScrollWidth = 0;
-			ReDraw();
+			ReLayout();
 			return true; // cancel old redraw
 		}
 	}
@@ -920,7 +918,7 @@ void EditorCtrl::DrawLayout(wxDC& dc, bool WXUNUSED(isScrolling)) {
 		m_gutterWidth = m_gutterCtrl->CalcLayout(size.y);
 
 		// Move gutter to correct position
-		const unsigned int gutterxpos = m_gutterLeft ? m_leftScrollWidth : size.x - m_gutterWidth;
+		const unsigned int gutterxpos = m_gutterLeft ? 0 : size.x - m_gutterWidth;
 		if (m_gutterCtrl->GetPosition().x != (int)gutterxpos) {
 			m_gutterCtrl->SetPosition(wxPoint(gutterxpos, 0));
 		}
@@ -1037,7 +1035,7 @@ void EditorCtrl::DrawLayout(wxDC& dc, bool WXUNUSED(isScrolling)) {
 	m_area->HideCaret();
 
 	// Copy MemoryDC to Display
-	const unsigned int xpos = m_leftScrollWidth + (m_gutterLeft ? m_gutterWidth : 0);
+	const unsigned int xpos = m_gutterLeft ? m_gutterWidth : 0;
 #ifdef __WXMSW__
 	::BitBlt(GetHdcOf(dc), xpos, 0,(int)editorSizeX, (int)size.y, GetHdcOf(mdc), 0, 0, SRCCOPY);
 #else
@@ -1067,18 +1065,18 @@ void EditorCtrl::DrawLayout(wxDC& dc, bool WXUNUSED(isScrolling)) {
 }
 
 unsigned int EditorCtrl::ClientWidthToEditor(unsigned int width) const {
-	return (width > m_gutterWidth) ? (width - (m_gutterWidth + m_leftScrollWidth)) : 0;
+	return (width > m_gutterWidth) ? (width - (m_gutterWidth)) : 0;
 }
 
 wxPoint EditorCtrl::ClientPosToEditor(unsigned int xpos, unsigned int ypos) const {
-	unsigned int adjXpos = (xpos - m_leftScrollWidth) + m_area->GetScrollPosX();
+	unsigned int adjXpos = xpos + m_area->GetScrollPosX();
 	if (m_gutterLeft) adjXpos -= m_gutterWidth;
 
 	return wxPoint(adjXpos, ypos + scrollPos);
 }
 
 wxPoint EditorCtrl::EditorPosToClient(unsigned int xpos, unsigned int ypos) const {
-	unsigned int adjXpos = (xpos - m_area->GetScrollPosX()) + m_leftScrollWidth;
+	unsigned int adjXpos = (xpos - m_area->GetScrollPosX());
 	if (m_gutterLeft) adjXpos += m_gutterWidth;
 
 	return wxPoint(adjXpos, ypos - scrollPos);
@@ -6229,9 +6227,15 @@ bool EditorCtrl::ReplaceAllRegex(const wxString& regex, const wxString& replacet
 }
 */
 
-void EditorCtrl::OnSize(wxSizeEvent& event) {
+void EditorCtrl::OnSize(wxSizeEvent& WXUNUSED(event)) {
+	ReLayout();
+}
+
+void EditorCtrl::ReLayout() {
+	wxRect rect = GetClientSize();
+	rect.SetLeft(m_leftScrollWidth);
 	if (m_area) {
-		m_area->SetSize(event.GetSize());
+		m_area->SetSize(rect);
 	}
 
 	// Draw the new layout
@@ -8311,6 +8315,7 @@ void EditorCtrl::OnMouseMotion(wxMouseEvent& event) {
 		if (!m_foldTooltipTimer.IsRunning() && 0 <= mpos.y && mpos.y < m_lines.GetHeight()) {
 			// Find out what is under mouse
 			const unsigned int line_id = m_lines.GetLineFromYPos(mpos.y);
+			wxLogDebug(wxT("hover over %d"), line_id);
 
 			// Check if we are hovering over a fold indicator
 			if (IsLineFolded(line_id)) {
@@ -8750,7 +8755,7 @@ void EditorCtrl::OnIdle(wxIdleEvent& event) {
 	if (HasScrollbar()) {
 		scrollPos = m_lines.GetYPosFromLine(topline) + lineoffset;
 		if (m_leftScrollbar) m_leftScrollbar->SetScrollbar(scrollPos, GetClientSize().y, m_lines.GetHeight(), GetClientSize().y);
-		else m_area->SetScrollbar(wxVERTICAL, scrollPos, GetClientSize().y, m_lines.GetHeight());
+		else m_area->SetScrollbar(wxVERTICAL, scrollPos, m_area->GetClientSize().y, m_lines.GetHeight());
 	}
 
 	// Check if we should request more idle events
